@@ -16,8 +16,6 @@ const QuestionDetail = () => {
 
     const fetchQuestion = async () => {
         try {
-            // Don't set loading to true on re-fetches, only initial load
-            // setLoading(true); 
             const res = await api.get(`/questions/${id}`);
             setQuestion(res.data);
         } catch (err) {
@@ -28,88 +26,87 @@ const QuestionDetail = () => {
     };
 
     useEffect(() => {
-        setLoading(true); // Set loading to true only on initial component mount
+        setLoading(true);
         fetchQuestion();
     }, [id]);
 
     const handleAnswerSubmit = async (e) => {
         e.preventDefault();
-        if (!answerContent.trim()) {
-            alert('Answer cannot be empty.');
-            return;
-        }
+        if (!answerContent.trim()) return alert('Answer cannot be empty.');
         try {
             await api.post(`/answers/question/${id}`, { content: answerContent });
-            setAnswerContent(''); // Clear the editor
-            fetchQuestion(); // Re-fetch the question to show the new answer
+            setAnswerContent('');
+            fetchQuestion(); 
         } catch (err) {
-            alert('Failed to post answer. Please try again.');
+            alert('Failed to post answer.');
         }
     };
 
     const handleVote = async (answerId, voteType) => {
-        if (!user) {
-            alert('You must be logged in to vote.');
-            return;
-        }
-        
-        // Keep a copy of the original state for rollback
+        if (!user) return alert('You must be logged in to vote.');
+
+        // Create a deep copy of the original state for rollback
         const originalQuestion = JSON.parse(JSON.stringify(question));
 
-        // Optimistic UI Update
-        const updatedAnswers = question.answers.map(a => {
-            if (a._id === answerId) {
-                const alreadyUpvoted = a.upvotes.includes(user.id);
-                const alreadyDownvoted = a.downvotes.includes(user.id);
-                let newUpvotes = [...a.upvotes];
-                let newDownvotes = [...a.downvotes];
+        // Create a new question object to ensure a re-render
+        const newQuestionState = JSON.parse(JSON.stringify(question));
 
-                if (voteType === 'upvote') {
-                    if (alreadyUpvoted) {
-                        newUpvotes = newUpvotes.filter(uid => uid !== user.id);
-                    } else {
-                        newUpvotes.push(user.id);
-                        newDownvotes = newDownvotes.filter(uid => uid !== user.id);
-                    }
-                } else { // downvote
-                    if (alreadyDownvoted) {
-                        newDownvotes = newDownvotes.filter(uid => uid !== user.id);
-                    } else {
-                        newDownvotes.push(user.id);
-                        newUpvotes = newUpvotes.filter(uid => uid !== user.id);
-                    }
+        const targetAnswer = newQuestionState.answers.find(a => a._id === answerId);
+        if (!targetAnswer) return;
+
+        const userId = user.id;
+        const upvoteIndex = targetAnswer.upvotes.indexOf(userId);
+        const downvoteIndex = targetAnswer.downvotes.indexOf(userId);
+
+        if (voteType === 'upvote') {
+            if (upvoteIndex !== -1) {
+                targetAnswer.upvotes.splice(upvoteIndex, 1);
+            } else {
+                targetAnswer.upvotes.push(userId);
+                if (downvoteIndex !== -1) {
+                    targetAnswer.downvotes.splice(downvoteIndex, 1);
                 }
-                return { ...a, upvotes: newUpvotes, downvotes: newDownvotes };
             }
-            return a;
-        });
-        setQuestion({ ...question, answers: updatedAnswers });
+        } else if (voteType === 'downvote') {
+            if (downvoteIndex !== -1) {
+                targetAnswer.downvotes.splice(downvoteIndex, 1);
+            } else {
+                targetAnswer.downvotes.push(userId);
+                if (upvoteIndex !== -1) {
+                    targetAnswer.upvotes.splice(upvoteIndex, 1);
+                }
+            }
+        }
+        
+        // Optimistic UI Update with the new state
+        setQuestion(newQuestionState);
 
-        // API Call
         try {
             await api.post(`/answers/${answerId}/vote`, { voteType });
         } catch (err) {
             // Rollback on error
             setQuestion(originalQuestion);
-            alert('Your vote could not be saved. Please try again.');
+            alert('Your vote could not be saved.');
         }
     };
 
     const handleAcceptAnswer = async (answerId) => {
         if (question.acceptedAnswer === answerId) return;
 
-        const originalAcceptedAnswer = question.acceptedAnswer;
+        const originalQuestion = JSON.parse(JSON.stringify(question));
 
-        // Optimistic UI Update: Immediately update the UI
-        setQuestion(prev => ({ ...prev, acceptedAnswer: answerId }));
+        // Create a new question object with the updated acceptedAnswer
+        const newQuestionState = { ...question, acceptedAnswer: answerId };
+        
+        // Optimistic UI Update
+        setQuestion(newQuestionState);
 
         try {
-            // API Call
             await api.post(`/answers/question/${id}/accept/${answerId}`);
         } catch (err) {
-            // Rollback on error: If the API fails, revert the UI to its original state.
-            setQuestion(prev => ({ ...prev, acceptedAnswer: originalAcceptedAnswer }));
-            alert('Failed to accept answer. Please try again.');
+            // Rollback on error
+            setQuestion(originalQuestion);
+            alert('Failed to accept answer.');
         }
     };
 
@@ -121,7 +118,6 @@ const QuestionDetail = () => {
 
     return (
         <div className="max-w-4xl mx-auto space-y-8">
-            {/* Question Section */}
             <div className="bg-white p-6 rounded-lg shadow-md">
                 <h1 className="text-3xl font-bold mb-4">{question.title}</h1>
                 <div className="prose max-w-none mb-6" dangerouslySetInnerHTML={{ __html: question.content }} />
@@ -131,7 +127,6 @@ const QuestionDetail = () => {
                 <p className="text-sm text-gray-500 mt-4">Asked by {question.author.username} on {new Date(question.createdAt).toLocaleDateString()}</p>
             </div>
 
-            {/* Answers Section */}
             <div className="bg-white rounded-lg shadow-md">
                 <h2 className="text-2xl font-bold p-6 border-b">{question.answers.length} Answers</h2>
                 {question.answers.map(answer => (
@@ -156,7 +151,6 @@ const QuestionDetail = () => {
                 ))}
             </div>
 
-            {/* Post Answer Form */}
             {user && (
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <h3 className="text-2xl font-bold mb-4">Your Answer</h3>
@@ -169,5 +163,4 @@ const QuestionDetail = () => {
         </div>
     );
 };
-
 export default QuestionDetail;
