@@ -37,8 +37,14 @@ exports.postAnswer = asyncHandler(async (req, res) => {
             message: `${req.user.username} answered your question: "${question.title.substring(0, 30)}..."`,
             link: `/questions/${question.id}`,
         });
+    
+        // This is the critical part
         const io = req.app.get('socketio');
-        io.to(question.author.toString()).emit('new_notification', notification);
+        const recipientId = question.author.toString();
+        io.to(recipientId).emit('new_notification', notification);
+        
+        // Add a console log for debugging on the backend
+        console.log(`Emitting 'new_notification' to room: ${recipientId}`);
     }
 
     const populatedAnswer = await Answer.findById(answer.id).populate('author', 'username');
